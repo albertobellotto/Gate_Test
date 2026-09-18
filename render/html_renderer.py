@@ -1,4 +1,8 @@
-"""Renders a list of FeedItem into a single, self-contained HTML dashboard."""
+"""Renders a list of FeedItem into a single, self-contained HTML dashboard.
+
+Layout: one independent column per source (Twitter, Telegram, Email), side
+by side on wide screens and stacked on narrow/mobile screens.
+"""
 
 import html
 from datetime import date
@@ -39,7 +43,7 @@ def _render_card(item):
         f'<div class="card-title">{html.escape(item.title)}</div>' if item.title else ""
     )
     meta_str = _render_meta(item)
-    meta_html = f'<div class="card-meta">{html.escape(meta_str)}</div>' if meta_str else ""
+    meta_html = f'<span class="card-meta">{html.escape(meta_str)}</span>' if meta_str else ""
     link_html = (
         f'<a class="card-link" href="{html.escape(item.url)}" target="_blank" rel="noopener">Apri ↗</a>'
         if item.url
@@ -47,12 +51,11 @@ def _render_card(item):
     )
 
     return f"""
-    <article class="card" data-source="{item.source}">
+    <article class="card">
       <div class="card-header">
-        <span class="badge badge-{item.source}">{SOURCE_ICONS.get(item.source, "")} {SOURCE_LABELS.get(item.source, item.source)}</span>
+        <span class="card-author">{html.escape(item.author)}</span>
         <span class="card-time">{_format_timestamp(item.timestamp)}</span>
       </div>
-      <div class="card-author">{html.escape(item.author)}</div>
       {title_html}
       <div class="card-content">{html.escape(item.content)}</div>
       <div class="card-footer">
@@ -63,15 +66,33 @@ def _render_card(item):
     """
 
 
-def render_html(items):
-    counts = {source: sum(1 for i in items if i.source == source) for source in SOURCE_LABELS}
-    cards_html = "\n".join(_render_card(item) for item in items)
+def _render_column(source, items):
+    if items:
+        cards_html = "\n".join(_render_card(item) for item in items)
+        search_empty_html = '<div class="column-empty-search">Nessun risultato.</div>'
+    else:
+        cards_html = '<div class="column-empty">Nessun elemento.</div>'
+        search_empty_html = ""
 
-    filter_buttons = ['<button class="filter-btn active" data-filter="all">Tutti (' + str(len(items)) + ')</button>']
-    for source, label in SOURCE_LABELS.items():
-        filter_buttons.append(
-            f'<button class="filter-btn" data-filter="{source}">{label} ({counts[source]})</button>'
-        )
+    return f"""
+    <section class="column" data-source="{source}">
+      <div class="column-header">
+        <span class="column-title">{SOURCE_ICONS.get(source, "")} {SOURCE_LABELS.get(source, source)}</span>
+        <span class="column-count">{len(items)}</span>
+      </div>
+      <div class="column-body">
+        {cards_html}
+        {search_empty_html}
+      </div>
+    </section>
+    """
+
+
+def render_html(items):
+    columns_by_source = {source: [i for i in items if i.source == source] for source in SOURCE_LABELS}
+    columns_html = "\n".join(
+        _render_column(source, columns_by_source[source]) for source in SOURCE_LABELS
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="it">
@@ -102,90 +123,104 @@ def render_html(items):
     }}
   }}
   * {{ box-sizing: border-box; }}
-  body {{
+  html, body {{
     margin: 0;
+    height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
   }}
   header {{
-    position: sticky;
-    top: 0;
-    z-index: 10;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-    padding: 16px 20px;
-  }}
-  h1 {{
-    margin: 0 0 12px 0;
-    font-size: 1.4rem;
-  }}
-  .controls {{
+    padding: 14px 20px;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 12px;
     align-items: center;
   }}
-  .filter-btn {{
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    padding: 6px 12px;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    cursor: pointer;
-  }}
-  .filter-btn.active {{
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
+  h1 {{
+    margin: 0;
+    font-size: 1.3rem;
+    white-space: nowrap;
   }}
   #search {{
     margin-left: auto;
-    padding: 7px 12px;
+    padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--bg);
     color: var(--text);
-    min-width: 200px;
+    min-width: 220px;
+    max-width: 100%;
   }}
-  main {{
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 20px;
+  .board {{
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    padding: 16px;
+    align-items: start;
+  }}
+  .column {{
     display: flex;
     flex-direction: column;
-    gap: 12px;
-  }}
-  .card {{
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 14px 16px;
+    overflow: hidden;
+    height: calc(100vh - 90px);
+  }}
+  .column-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700;
+    flex-shrink: 0;
+  }}
+  .column[data-source="twitter"] .column-header {{ border-top: 3px solid var(--twitter); }}
+  .column[data-source="telegram"] .column-header {{ border-top: 3px solid var(--telegram); }}
+  .column[data-source="email"] .column-header {{ border-top: 3px solid var(--email); }}
+  .column-count {{
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }}
+  .column-body {{
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+  }}
+  .card {{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
   }}
   .card-header {{
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-  }}
-  .badge {{
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 3px 9px;
-    border-radius: 999px;
-    color: white;
-  }}
-  .badge-twitter {{ background: var(--twitter); }}
-  .badge-telegram {{ background: var(--telegram); }}
-  .badge-email {{ background: var(--email); }}
-  .card-time {{
-    font-size: 0.78rem;
-    color: var(--text-muted);
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
   }}
   .card-author {{
     font-weight: 600;
-    margin-bottom: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }}
+  .card-time {{
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
   }}
   .card-title {{
     font-weight: 600;
@@ -196,6 +231,7 @@ def render_html(items):
     color: var(--text);
     line-height: 1.45;
     white-space: pre-line;
+    font-size: 0.92rem;
   }}
   .card-footer {{
     display: flex;
@@ -204,63 +240,73 @@ def render_html(items):
     margin-top: 8px;
   }}
   .card-meta {{
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     color: var(--text-muted);
   }}
   .card-link {{
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: var(--accent);
     text-decoration: none;
   }}
-  .empty-state {{
+  .column-empty,
+  .column-empty-search {{
     text-align: center;
     color: var(--text-muted);
-    padding: 40px 0;
+    padding: 24px 0;
+    font-size: 0.88rem;
+  }}
+  .column-empty-search {{
+    display: none;
+  }}
+
+  @media (max-width: 900px) {{
+    .board {{
+      grid-template-columns: 1fr;
+    }}
+    .column {{
+      height: auto;
+      max-height: 70vh;
+    }}
+    #search {{
+      min-width: 0;
+      flex: 1 1 100%;
+      margin-left: 0;
+    }}
   }}
 </style>
 </head>
 <body>
 <header>
   <h1>📡 Feed Unificato</h1>
-  <div class="controls">
-    {"".join(filter_buttons)}
-    <input id="search" type="text" placeholder="Cerca...">
-  </div>
+  <input id="search" type="text" placeholder="Cerca in tutti i feed...">
 </header>
-<main id="feed">
-{cards_html}
-<div class="empty-state" id="empty-state" style="display:none;">Nessun risultato.</div>
-</main>
+<div class="board">
+{columns_html}
+</div>
 <script>
-  const buttons = document.querySelectorAll(".filter-btn");
   const search = document.getElementById("search");
-  const cards = document.querySelectorAll(".card");
-  const emptyState = document.getElementById("empty-state");
-  let currentFilter = "all";
+  const columns = document.querySelectorAll(".column");
 
-  function applyFilters() {{
+  function applyFilter() {{
     const query = search.value.trim().toLowerCase();
-    let visibleCount = 0;
-    cards.forEach(card => {{
-      const matchesSource = currentFilter === "all" || card.dataset.source === currentFilter;
-      const matchesQuery = !query || card.textContent.toLowerCase().includes(query);
-      const visible = matchesSource && matchesQuery;
-      card.style.display = visible ? "" : "none";
-      if (visible) visibleCount++;
+    columns.forEach(column => {{
+      const cards = column.querySelectorAll(".card");
+      let visibleCount = 0;
+      cards.forEach(card => {{
+        const matches = !query || card.textContent.toLowerCase().includes(query);
+        card.style.display = matches ? "" : "none";
+        if (matches) visibleCount++;
+      }});
+      const countEl = column.querySelector(".column-count");
+      if (countEl) countEl.textContent = visibleCount;
+      const emptySearchEl = column.querySelector(".column-empty-search");
+      if (emptySearchEl) {{
+        emptySearchEl.style.display = (query && visibleCount === 0 && cards.length > 0) ? "block" : "none";
+      }}
     }});
-    emptyState.style.display = visibleCount === 0 ? "block" : "none";
   }}
 
-  buttons.forEach(btn => {{
-    btn.addEventListener("click", () => {{
-      buttons.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentFilter = btn.dataset.filter;
-      applyFilters();
-    }});
-  }});
-
-  search.addEventListener("input", applyFilters);
+  search.addEventListener("input", applyFilter);
 </script>
 </body>
 </html>
